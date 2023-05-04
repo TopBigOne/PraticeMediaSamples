@@ -8,11 +8,12 @@ import com.manu.mediasamples.util.L
 import java.io.IOException
 
 /**
- * @Desc:
+ * @Desc: 编码管理
  * @Author: jzman
  */
 object EncodeManager {
     private const val TAG = "EncodeManager"
+    // 媒体混合器
     private lateinit var mMediaMuxer: MediaMuxer
 
     /**
@@ -21,7 +22,9 @@ object EncodeManager {
     fun init(width: Int, height: Int){
         L.i(TAG, "init")
         initMuxer()
+        // 录音
         AudioEncode.initAudio(mMediaMuxer)
+        // 录制视频
         VideoEncode.initVideo(width,height, mMediaMuxer)
     }
 

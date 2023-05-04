@@ -113,7 +113,6 @@ class AudioTrackActivity : AppCompatActivity(),View.OnClickListener{
 
     private fun writeAudioData(){
         scope.launch(Dispatchers.IO){
-            val pcmFile = File(pcmFilePath)
             val ins = assets.open("孤独颂歌_陈文非.pcm")
             val bytes = ByteArray(bufferSize)
             var len: Int

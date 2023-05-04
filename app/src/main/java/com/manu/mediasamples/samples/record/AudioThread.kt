@@ -13,6 +13,7 @@ import kotlin.properties.Delegates
 class AudioThread {
     private val tag = "AudioThread"
     private var bufferSize by Delegates.notNull<Int>()
+    // 音频数据队列
     private var quene: LinkedBlockingQueue<ByteArray> = LinkedBlockingQueue()
 
     /** 录制状态 -1表示默认状态，1表述录制状态，0表示停止录制*/
@@ -77,6 +78,7 @@ class AudioThread {
                 val result = mAudioRecord.read(byteArray, 0, bufferSize)
                 if (result > 0){
                     val resultArray = ByteArray(result)
+                    /*public static native void arraycopy(Object src,  int  srcPos, Object dest, int destPos,int length);*/
                     System.arraycopy(byteArray, 0, resultArray, 0, result)
                     quene.offer(resultArray)
                 }

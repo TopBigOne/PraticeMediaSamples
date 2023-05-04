@@ -65,7 +65,7 @@ class ImageActivity : AppCompatActivity(), View.OnClickListener {
     }
 
     init {
-        //  System.loadLibrary("native-yuv-to-buffer-lib")
+          System.loadLibrary("native-yuv-to-buffer-lib")
     }
 
     companion object {

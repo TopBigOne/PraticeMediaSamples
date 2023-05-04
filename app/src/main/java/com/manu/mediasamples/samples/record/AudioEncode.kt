@@ -45,33 +45,26 @@ object AudioEncode : MediaCodec.Callback() {
         mAudioCodec.release()
         mAudioThread.stopRecord()
         RecordConfig.isAudioStop = true
-        if (RecordConfig.isVideoStop) {
+        if(RecordConfig.isVideoStop) {
             mAudioMuxer.stop()
             mAudioMuxer.release()
             RecordConfig.isAudioStop = false
         }
     }
 
-    override fun onOutputBufferAvailable(
-        codec: MediaCodec,
-        index: Int,
-        info: MediaCodec.BufferInfo
-    ) {
-        L.i(
-            TAG,
-            "onOutputBufferAvailable index:$index, info->offset:${info.offset},size:${info.size}" +
-                    ",pts:${info.presentationTimeUs / 1000000} , isMuxerStart:${RecordConfig.isMuxerStart}"
-        )
+    override fun onOutputBufferAvailable(codec: MediaCodec, index: Int,
+            info: MediaCodec.BufferInfo) {
+        L.i(TAG, "onOutputBufferAvailable index:$index, info->offset:${info.offset},size:${info.size}" + ",pts:${info.presentationTimeUs / 1000000} , isMuxerStart:${RecordConfig.isMuxerStart}")
         // 如果发现MediaMuxer还未启动，则释放这个OutputBuffer
-        if (!RecordConfig.isMuxerStart) {
+        if(!RecordConfig.isMuxerStart) {
             mAudioCodec.releaseOutputBuffer(index, false)
             return
         }
         val outputBuffer = codec.getOutputBuffer(index) ?: return
-        if (info.size > 0) {
+        if(info.size > 0) {
             outputBuffer.position(info.offset)
             outputBuffer.limit(info.size)
-            if (pts == 0L) {
+            if(pts == 0L) {
                 info.presentationTimeUs = info.presentationTimeUs - pts
             }
             mAudioMuxer.writeSampleData(RecordConfig.audioTrackIndex, outputBuffer, info)
@@ -80,58 +73,40 @@ object AudioEncode : MediaCodec.Callback() {
     }
 
     override fun onInputBufferAvailable(codec: MediaCodec, index: Int) {
-        L.i(
-            TAG,
-            "onInputBufferAvailable index:$index  ,isMuxerStart:${RecordConfig.isMuxerStart}"
-        )
+        L.i(TAG, "onInputBufferAvailable index:$index  ,isMuxerStart:${RecordConfig.isMuxerStart}")
 
         val inputBuffer = codec.getInputBuffer(index)
         val result = mAudioThread.poll()
 
-        if (result != null && result.size == 1 && result[0] == (-100).toByte()) {
+        if(result != null && result.size == 1 && result[0] == (-100).toByte()) {
             isAudioStreamEnd = true
         }
 
         L.i(TAG, "result:$result , isAudioStreamEnd:$isAudioStreamEnd")
-        if (result != null && !isAudioStreamEnd) {
+        if(result != null && !isAudioStreamEnd) {
             val readSize = result.size
             inputBuffer?.clear()
             inputBuffer?.limit(readSize)
             inputBuffer?.put(result, 0, readSize)
             pts = System.nanoTime() / 1000;
-            L.i(
-                TAG,
-                "pcm一帧时间戳 = ${pts / 1000000.0f}---pts:$pts"
-            )
+            L.i(TAG, "pcm一帧时间戳 = ${pts / 1000000.0f}---pts:$pts")
             mAudioCodec.queueInputBuffer(index, 0, readSize, pts, 0)
         }
 
         //如果为null就不调用queueInputBuffer  回调几次后就会导致无可用InputBuffer，从而导致MediaCodec任务结束 只能写个配置文件
-        if (result == null && !isAudioStreamEnd) {
-            codec.queueInputBuffer(
-                index,
-                0,
-                0,
-                0,
-                0
-            )
+        if(result == null && !isAudioStreamEnd) {
+            codec.queueInputBuffer(index, 0, 0, 0, 0)
         }
 
-        if (isAudioStreamEnd) {
-            codec.queueInputBuffer(
-                index,
-                0,
-                0,
-                0,
-                MediaCodec.BUFFER_FLAG_END_OF_STREAM
-            )
+        if(isAudioStreamEnd) {
+            codec.queueInputBuffer(index, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
         }
     }
 
     override fun onOutputFormatChanged(codec: MediaCodec, format: MediaFormat) {
         L.i(TAG, "onOutputFormatChanged format:${format}")
         addAudioTrack(format)
-        if (RecordConfig.videoTrackIndex != -1) {
+        if(RecordConfig.videoTrackIndex != -1) {
             mAudioMuxer.start()
             RecordConfig.isMuxerStart = true
             L.i(TAG, "onOutputFormatChanged isMuxerStart:${RecordConfig.isMuxerStart}")
@@ -145,18 +120,12 @@ object AudioEncode : MediaCodec.Callback() {
     private fun initAudioCodec() {
         L.i(TAG, "init Codec start")
         try {
-            val mediaFormat =
-                MediaFormat.createAudioFormat(
-                    MediaFormat.MIMETYPE_AUDIO_AAC,
-                    RecordConfig.SAMPLE_RATE,
-                    2
-                )
+            val mediaFormat = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, RecordConfig.SAMPLE_RATE, 2)
+
             mAudioCodec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC)
+
             mediaFormat.setInteger(MediaFormat.KEY_BIT_RATE, 96000)
-            mediaFormat.setInteger(
-                MediaFormat.KEY_AAC_PROFILE,
-                MediaCodecInfo.CodecProfileLevel.AACObjectLC
-            )
+            mediaFormat.setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
             mediaFormat.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 8192)
             mAudioCodec.setCallback(this)
             mAudioCodec.configure(mediaFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)

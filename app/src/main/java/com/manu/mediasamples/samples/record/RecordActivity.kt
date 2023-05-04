@@ -21,6 +21,7 @@ import com.google.android.material.snackbar.Snackbar
 import com.manu.mediasamples.MainActivity
 import com.manu.mediasamples.R
 import com.manu.mediasamples.databinding.ActivityCameraBinding
+import com.manu.mediasamples.samples.frame.ImageActivity
 import com.manu.mediasamples.util.L
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -43,7 +44,7 @@ class RecordActivity : AppCompatActivity(), View.OnClickListener {
     private lateinit var mSurface: Surface
     private lateinit var previewSize: Size
 
-    private var mCameraThread = HandlerThread("CameraThread").apply { start() }
+    private var mCameraThread = HandlerThread("Camera-Thread").apply { start() }
     private var mCameraHandler = Handler(mCameraThread.looper)
 
     private var isRecordState = false
@@ -161,25 +162,21 @@ class RecordActivity : AppCompatActivity(), View.OnClickListener {
     /**
      * 开启录制
      */
-    @RequiresApi(Build.VERSION_CODES.P)
-    private fun startRecord()  {
+    private fun startRecord() {
         L.i(TAG, "startRecord")
         EncodeManager.init(previewSize.width, previewSize.height)
-        if (!isCameraState) {
-            Snackbar.make(
-                binding.container,
-                getString(R.string.camera_error),
-                Snackbar.LENGTH_LONG
-            ).show()
+        if(!isCameraState) {
+            Snackbar.make(binding.container, getString(R.string.camera_error), Snackbar.LENGTH_LONG)
+                    .show()
             return
         }
 
-        Snackbar.make(
-            binding.container,
-            getString(if (isRecordState) R.string.record_now else R.string.record_start),
-            Snackbar.LENGTH_LONG
-        ).show()
-        if (isRecordState) return
+        Snackbar
+                .make(binding.container, getString(if(isRecordState) R.string.record_now else R.string.record_start), Snackbar.LENGTH_LONG)
+                .show()
+        if(isRecordState) {
+            return
+        }
 
         mSurfaceTexture = binding.textureView.surfaceTexture!!
         mSurface = Surface(mSurfaceTexture)
@@ -194,53 +191,63 @@ class RecordActivity : AppCompatActivity(), View.OnClickListener {
         val outputs = mutableListOf<OutputConfiguration>()
         outputs.add(OutputConfiguration(mSurface))
         outputs.add(OutputConfiguration(VideoEncode.getSurface()))
-        val sessionConfiguration = SessionConfiguration(
-            SessionConfiguration.SESSION_REGULAR,
-            outputs, mExecutor, object : CameraCaptureSession.StateCallback() {
 
-                override fun onActive(session: CameraCaptureSession) {
-                    super.onActive(session)
-                    // 会话主动处理Capture Request
-                    L.i(TAG, "onActive")
-                }
+        if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val sessionConfiguration = SessionConfiguration(SessionConfiguration.SESSION_REGULAR, outputs, mExecutor, CameraCaptureSessionStateCallback())
+            mCameraDevice.createCaptureSession(sessionConfiguration)
+            return
+        } else {
+            createSession()
+        }
+    }
 
-                override fun onReady(session: CameraCaptureSession) {
-                    super.onReady(session)
-                    // 每次会话没有更多的Capture Request时调用
-                    // Camera完成自身配置没有Capture Request提交至会话也会调用
-                    // 会话完成所有的Capture Request会回调
-                    L.i(TAG, "onReady")
-                }
+    private fun createSession() {
+        Log.d(TAG, "createSession: ")
+        val outputs = mutableListOf<Surface>()
+        outputs.add(mSurface)
+        outputs.add(VideoEncode.getSurface())
 
-                override fun onConfigureFailed(session: CameraCaptureSession) {
-                    val exc = RuntimeException("Camera $mCameraId session configuration failed")
-                    L.e(TAG, exc.message, exc)
-                }
+        mCameraDevice.createCaptureSession(outputs,CameraCaptureSessionStateCallback(),null)
 
-                override fun onConfigured(session: CameraCaptureSession) {
-                    // Camera完成自身配置，会话开始处理请求
-                    // Capture Request已经在会话中排队，则立即调用onActive
-                    // 没有提交Capture Request则调用onReady
-                    L.i(TAG, "onConfigured")
-                    mCameraCaptureSession = session
+    }
 
-                    // 设置各种参数
-                    mCaptureRequestBuild.set(
-                        CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE, // 视频稳定功能是否激活
-                        1
-                    )
-                    // 发送CaptureRequest
-                    mCameraCaptureSession.setRepeatingRequest(
-                        mCaptureRequestBuild.build(),
-                        null,
-                        mCameraHandler
-                    )
-                    // 开始编码
-                    EncodeManager.startEncode()
-                    isRecordState = true
-                }
-            })
-        mCameraDevice.createCaptureSession(sessionConfiguration)
+    private inner class CameraCaptureSessionStateCallback : CameraCaptureSession.StateCallback() {
+        override fun onActive(session: CameraCaptureSession) {
+            super.onActive(session)
+            // 会话主动处理Capture Request
+            L.i(TAG, "onActive")
+        }
+
+        override fun onReady(session: CameraCaptureSession) {
+            super.onReady(session)
+            // 每次会话没有更多的Capture Request时调用
+            // Camera完成自身配置没有Capture Request提交至会话也会调用
+            // 会话完成所有的Capture Request会回调
+            L.i(TAG, "onReady")
+        }
+
+        override fun onConfigureFailed(session: CameraCaptureSession) {
+            val exc = RuntimeException("Camera $mCameraId session configuration failed")
+            L.e(TAG, exc.message, exc)
+        }
+
+        override fun onConfigured(session: CameraCaptureSession) {
+            // Camera完成自身配置，会话开始处理请求
+            // Capture Request已经在会话中排队，则立即调用onActive
+            // 没有提交Capture Request则调用onReady
+            L.i(TAG, "onConfigured")
+            mCameraCaptureSession = session
+
+            // 设置各种参数
+            mCaptureRequestBuild.set(CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE, // 视频稳定功能是否激活
+                1)
+            // 发送CaptureRequest
+            mCameraCaptureSession.setRepeatingRequest(mCaptureRequestBuild.build(), null, mCameraHandler)
+            // 开始编码
+            EncodeManager.startEncode()
+            isRecordState = true
+        }
+
     }
 
     /**
@@ -253,12 +260,9 @@ class RecordActivity : AppCompatActivity(), View.OnClickListener {
 
     private fun stop() {
         Snackbar
-            .make(
-                binding.container,
-                getString(if (isRecordState) R.string.record_end else R.string.record_none),
-                Snackbar.LENGTH_LONG
-            ).show()
-        if (!isRecordState) return
+                .make(binding.container, getString(if(isRecordState) R.string.record_end else R.string.record_none), Snackbar.LENGTH_LONG)
+                .show()
+        if(!isRecordState) return
         EncodeManager.stopEncode()
         closeCaptureSession()
         isRecordState = false
