@@ -25,6 +25,7 @@ import com.manu.mediasamples.R
 import com.manu.mediasamples.databinding.ActivityCameraBinding
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import kotlin.math.log
 
 /**
  * Image数据处理
@@ -32,6 +33,7 @@ import java.util.concurrent.Executors
  * @Author: jzman
  */
 class ImageActivity : AppCompatActivity(), View.OnClickListener {
+
 
     private lateinit var binding: ActivityCameraBinding
     private lateinit var mCameraId: String
@@ -53,7 +55,7 @@ class ImageActivity : AppCompatActivity(), View.OnClickListener {
     private var mImageHandler = Handler(mImageThread.looper)
 
     private var isRecordState = false
-    private var isCameraState = false;
+    private var isCameraState = false
 
     /**
      * 获取CameraManager
@@ -63,11 +65,11 @@ class ImageActivity : AppCompatActivity(), View.OnClickListener {
     }
 
     init {
-//        System.loadLibrary("native-yuv-to-buffer-lib")
+        //  System.loadLibrary("native-yuv-to-buffer-lib")
     }
 
     companion object {
-        private const val TAG = "CameraActivity3"
+        private const val TAG = "ImageActivity : "
 
         /** 渲染缓冲区中最大的图像数量 */
         private const val IMAGE_BUFFER_SIZE: Int = 3
@@ -77,17 +79,22 @@ class ImageActivity : AppCompatActivity(), View.OnClickListener {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityCameraBinding.inflate(layoutInflater)
+
         setContentView(binding.root)
         binding.btnRecord.setOnClickListener(this)
         binding.btnStop.setOnClickListener(this)
         mCameraId = intent.getStringExtra(MainActivity.CAMERA_ID).toString()
         mExecutor = Executors.newSingleThreadExecutor()
         previewSize = Size(1920, 1080)
+
+        // 屏幕显示时，
         binding.textureView.setAspectRatio(previewSize.width, previewSize.height)
+
+        // 设置了监听
         binding.textureView.surfaceTextureListener = TextureListener()
     }
 
-    @RequiresApi(Build.VERSION_CODES.P)
+
     override fun onClick(v: View?) {
         when (v?.id) {
             R.id.btnRecord -> startRecord()
@@ -124,11 +131,12 @@ class ImageActivity : AppCompatActivity(), View.OnClickListener {
      */
     @SuppressLint("MissingPermission")
     private fun openCamera() {
+        Log.d(TAG, "openCamera: ")
         mCameraManager.openCamera(mCameraId, object : CameraDevice.StateCallback() {
             @RequiresApi(Build.VERSION_CODES.P)
             override fun onOpened(camera: CameraDevice) {
                 // 设备开启
-                Log.i(TAG, "onOpened")
+                Log.d(TAG, "openCamera#onOpened ")
                 mCameraDevice = camera
                 isCameraState = true
             }
@@ -168,24 +176,21 @@ class ImageActivity : AppCompatActivity(), View.OnClickListener {
     /**
      * 开启录制
      */
-    @RequiresApi(Build.VERSION_CODES.P)
+
     private fun startRecord() {
 
-        if (!isCameraState) {
-            Snackbar.make(
-                binding.container,
-                getString(R.string.camera_error),
-                Snackbar.LENGTH_LONG
-            ).show()
+        if(!isCameraState) {
+            Snackbar.make(binding.container, getString(R.string.camera_error), Snackbar.LENGTH_LONG)
+                    .show()
             return
         }
 
-        Snackbar.make(
-            binding.container,
-            getString(if (isRecordState) R.string.record_now else R.string.record_start),
-            Snackbar.LENGTH_LONG
-        ).show()
-        if (isRecordState) return
+        Snackbar
+                .make(binding.container, getString(if(isRecordState) R.string.record_now else R.string.record_start), Snackbar.LENGTH_LONG)
+                .show()
+        if(isRecordState){
+            return
+        }
 
         mSurfaceTexture = binding.textureView.surfaceTexture!!
         mSurface = Surface(mSurfaceTexture)
@@ -193,12 +198,7 @@ class ImageActivity : AppCompatActivity(), View.OnClickListener {
 
         // 初始化ImageReader
         mSurfaceTexture.setDefaultBufferSize(previewSize.width, previewSize.height)
-        mImageReader = ImageReader.newInstance(
-            previewSize.width,
-            previewSize.height,
-            ImageFormat.YUV_420_888,
-            IMAGE_BUFFER_SIZE
-        )
+        mImageReader = ImageReader.newInstance(previewSize.width, previewSize.height, ImageFormat.YUV_420_888, IMAGE_BUFFER_SIZE)
 
         // 添加预览的Surface和生成Image的Surface
         mCaptureRequestBuild = mCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
@@ -210,53 +210,63 @@ class ImageActivity : AppCompatActivity(), View.OnClickListener {
         val outputs = mutableListOf<OutputConfiguration>()
         outputs.add(OutputConfiguration(mSurface))
         outputs.add(OutputConfiguration(mImageReader.surface))
-        val sessionConfiguration = SessionConfiguration(
-            SessionConfiguration.SESSION_REGULAR,
-            outputs, mExecutor, object : CameraCaptureSession.StateCallback() {
 
-                override fun onActive(session: CameraCaptureSession) {
-                    super.onActive(session)
-                    // 会话主动处理Capture Request
-                    Log.i(TAG, "onActive")
-                }
+        if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val sessionConfiguration = SessionConfiguration(SessionConfiguration.SESSION_REGULAR, outputs, mExecutor, SessionStateCallback())
+            mCameraDevice.createCaptureSession(sessionConfiguration)
+        }else{
+            createSession()
+        }
+    }
 
-                override fun onReady(session: CameraCaptureSession) {
-                    super.onReady(session)
-                    // 每次会话没有更多的Capture Request时调用
-                    // Camera完成自身配置没有Capture Request提交至会话也会调用
-                    // 会话完成所有的Capture Request会回调
-                    Log.i(TAG, "onReady")
-                }
+    private fun createSession() {
+        Log.d(TAG, "createSession: ")
+        val outputs = mutableListOf<Surface>()
+        outputs.add(mSurface)
+        outputs.add(mImageReader.surface)
 
-                override fun onConfigureFailed(session: CameraCaptureSession) {
-                    val exc = RuntimeException("Camera $mCameraId session configuration failed")
-                    Log.e(TAG, exc.message, exc)
-                }
+        mCameraDevice.createCaptureSession(outputs,SessionStateCallback(),null)
 
-                override fun onConfigured(session: CameraCaptureSession) {
-                    // Camera完成自身配置，会话开始处理请求
-                    // Capture Request已经在会话中排队，则立即调用onActive
-                    // 没有提交Capture Request则调用onReady
-                    Log.i(TAG, "onConfigured")
-                    mCameraCaptureSession = session
+    }
 
-                    // 设置各种参数
-                    mCaptureRequestBuild.set(
-                        CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE, // 视频稳定功能是否激活
-                        1
-                    )
-                    // 发送CaptureRequest
-                    mCameraCaptureSession.setRepeatingRequest(
-                        mCaptureRequestBuild.build(),
-                        null,
-                        mCameraHandler
-                    )
-                    AsyncInputEncodeManager.init(previewSize.width, previewSize.height)
-                    AsyncInputEncodeManager.startEncode()
-                    isRecordState = true
-                }
-            })
-        mCameraDevice.createCaptureSession(sessionConfiguration)
+
+    private inner class SessionStateCallback : CameraCaptureSession.StateCallback() {
+        override fun onActive(session: CameraCaptureSession) {
+            super.onActive(session)
+            // 会话主动处理Capture Request
+            Log.i(TAG, "onActive")
+        }
+
+        override fun onReady(session: CameraCaptureSession) {
+            super.onReady(session)
+            // 每次会话没有更多的Capture Request时调用
+            // Camera完成自身配置没有Capture Request提交至会话也会调用
+            // 会话完成所有的Capture Request会回调
+            Log.i(TAG, "onReady")
+        }
+
+        override fun onConfigureFailed(session: CameraCaptureSession) {
+            val exc = RuntimeException("Camera $mCameraId session configuration failed")
+            Log.e(TAG, exc.message, exc)
+        }
+
+        override fun onConfigured(session: CameraCaptureSession) {
+            // Camera完成自身配置，会话开始处理请求
+            // Capture Request已经在会话中排队，则立即调用onActive
+            // 没有提交Capture Request则调用onReady
+            Log.i(TAG, "onConfigured")
+            mCameraCaptureSession = session
+
+            // 设置各种参数
+            mCaptureRequestBuild.set(CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE, // 视频稳定功能是否激活
+                1)
+            // 发送CaptureRequest
+            mCameraCaptureSession.setRepeatingRequest(mCaptureRequestBuild.build(), null, mCameraHandler)
+            AsyncInputEncodeManager.init(previewSize.width, previewSize.height)
+            AsyncInputEncodeManager.startEncode()
+            isRecordState = true
+        }
+
     }
 
     /**
@@ -269,12 +279,9 @@ class ImageActivity : AppCompatActivity(), View.OnClickListener {
 
     private fun stop() {
         Snackbar
-            .make(
-                binding.container,
-                getString(if (isRecordState) R.string.record_end else R.string.record_none),
-                Snackbar.LENGTH_LONG
-            ).show()
-        if (!isRecordState) return
+                .make(binding.container, getString(if(isRecordState) R.string.record_end else R.string.record_none), Snackbar.LENGTH_LONG)
+                .show()
+        if(!isRecordState) return
         AsyncInputEncodeManager.stopEncode()
         closeCaptureSession()
         isRecordState = false
@@ -324,10 +331,7 @@ class ImageActivity : AppCompatActivity(), View.OnClickListener {
             Log.i(TAG, "onImageAvailable > isStop：" + AsyncInputEncodeManager.isStop())
             // 实时获取最新的Image
             val image = reader.acquireLatestImage() ?: return
-            Log.i(
-                TAG,
-                "onImageAvailable > planes:" + image.planes.size
-            )
+            Log.i(TAG, "onImageAvailable > planes:" + image.planes.size)
 //
 //            Log.i(TAG, "image plane size:${image.planes.size}")
 //            Log.i(TAG, "image width:${image.width}")
@@ -354,10 +358,14 @@ class ImageActivity : AppCompatActivity(), View.OnClickListener {
             // 填充YUV数据
             val mYUVByteArray = ByteArray(byteBufferYSize + byteBufferUSize + byteBufferVSize)
             byteBufferY.get(mYUVByteArray, 0, byteBufferYSize)
+
             byteBufferU.get(mYUVByteArray, byteBufferYSize, byteBufferUSize)
+
             byteBufferV.get(mYUVByteArray, byteBufferYSize + byteBufferUSize, byteBufferVSize)
-            if (!AsyncInputEncodeManager.isStop()) {
-                AsyncInputEncodeManager.offer(mYUVByteArray,image.timestamp / 1000)
+
+
+            if(!AsyncInputEncodeManager.isStop()) {
+                AsyncInputEncodeManager.offer(mYUVByteArray, image.timestamp / 1000)
             }
             image.close()
             Log.i(TAG, "mYUVByteArray:${mYUVByteArray.size}")
